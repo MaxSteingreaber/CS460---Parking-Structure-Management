@@ -112,10 +112,9 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
     }
 
     private void drawHatching(Graphics2D g, int x, int y, int size) {
-        g.setColor(Color.DARK_GRAY);
-        for (int i = 0; i < size * 2; i += 8) {
-            g.drawLine(x + i, y, x, y + i);
-            g.drawLine(x + size, y + i - size, x + i, y + size);
+        for (int i = y; i < y + size; i += 4) {
+            g.setColor((i / 4) % 2 == 0 ? Color.LIGHT_GRAY : Color.GRAY);
+            g.fillRect(x, i, size, 2);
         }
     }
 
