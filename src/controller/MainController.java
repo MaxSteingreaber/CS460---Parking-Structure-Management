@@ -161,6 +161,22 @@ public class MainController {
         });
     }
 
+    public void reserveSpace(String spaceId) {
+        findSpaceById(spaceId).ifPresent(space -> {
+            space.reserve();
+            notifyObservers(new SystemEvent(EventType.RESTRICTION, spaceId,
+                    "Space reserved: " + spaceId));
+        });
+    }
+
+    public void unreserveSpace(String spaceId) {
+        findSpaceById(spaceId).ifPresent(space -> {
+            space.unreserve();
+            notifyObservers(new SystemEvent(EventType.RESTRICTION, spaceId,
+                    "Space unreserved: " + spaceId));
+        });
+    }
+
     private Optional<ParkingSpace> findSpaceById(String spaceId) {
         for (Floor floor : parkingStructure.getFloors()) {
             for (int r = 0; r < floor.getRows(); r++) {

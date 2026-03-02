@@ -30,6 +30,10 @@ public class AdminCommands {
         mainController.unrestrictSpace(spaceId);
     }
 
+    public void reserveSpace(String spaceId) { mainController.reserveSpace(spaceId); }
+
+    public void unreserveSpace(String spaceId) { mainController.unreserveSpace(spaceId); }
+
     public void simulateEntry() {
         mainController.handleVehicleEntry();
     }

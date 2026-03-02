@@ -58,12 +58,14 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
     }
 
     public JPanel buildSpacePanel() {
-        JPanel panel = new JPanel(new GridLayout(3, 2, 4, 4));
+        JPanel panel = new JPanel(new GridLayout(4, 2, 4, 4));
         panel.setBorder(BorderFactory.createTitledBorder("Space Management"));
 
         JTextField spaceField = new JTextField();
         JButton restrictBtn   = new JButton("Restrict");
         JButton unrestrictBtn = new JButton("Unrestrict");
+        JButton reserveBtn    = new JButton("Reserve");
+        JButton unreserveBtn  = new JButton("Unreserve");
 
         restrictBtn.addActionListener(e -> {
             String id = spaceField.getText().trim();
@@ -73,11 +75,21 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
             String id = spaceField.getText().trim();
             if (!id.isEmpty()) mainController.getAdminCommands().unrestrictSpace(id);
         });
+        reserveBtn.addActionListener(e -> {
+            String id = spaceField.getText().trim();
+            if (!id.isEmpty()) mainController.getAdminCommands().reserveSpace(id);
+        });
+        unreserveBtn.addActionListener(e -> {
+            String id = spaceField.getText().trim();
+            if (!id.isEmpty()) mainController.getAdminCommands().unreserveSpace(id);
+        });
 
         panel.add(new JLabel("Space ID:"));
         panel.add(spaceField);
         panel.add(restrictBtn);
         panel.add(unrestrictBtn);
+        panel.add(reserveBtn);
+        panel.add(unreserveBtn);
         return panel;
     }
 

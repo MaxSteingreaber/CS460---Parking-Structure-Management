@@ -65,6 +65,21 @@ public class ParkingSpace {
         }
     }
 
+    public void reserve() {
+        if (state == SpaceState.OCCUPIED) return;
+        SpaceState old = this.state;
+        this.state = SpaceState.RESERVED;
+        pcs.firePropertyChange("state", old, this.state);
+    }
+
+    public void unreserve() {
+        if (state == SpaceState.RESERVED) {
+            SpaceState old = this.state;
+            this.state = SpaceState.AVAILABLE;
+            pcs.firePropertyChange("state", old, this.state);
+        }
+    }
+
     public void addPropertyChangeListener(PropertyChangeListener listener) {
         pcs.addPropertyChangeListener(listener);
     }
