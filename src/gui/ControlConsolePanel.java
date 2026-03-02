@@ -4,6 +4,7 @@ import controller.MainController;
 import model.Session;
 import observer.SystemEvent;
 import observer.SystemObserver;
+import simulation.SimulationEngine;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -15,6 +16,7 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
     private final MainController     mainController;
     private DefaultTableModel        sessionTableModel;
     private DefaultTableModel        transactionTableModel;
+    private SimulationEngine         simulationEngine;
 
     public ControlConsolePanel(MainController mainController) {
         this.mainController = mainController;
@@ -28,6 +30,8 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         add(buildSimulationPanel());
         add(buildSessionPanel());
     }
+
+    // ── Emergency ─────────────────────────────────────────────────────────────
 
     public JPanel buildEmergencyPanel() {
         JPanel panel = new JPanel(new GridLayout(1, 2, 4, 0));
@@ -56,6 +60,8 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         panel.add(deactivateBtn);
         return panel;
     }
+
+    // ── Space management ──────────────────────────────────────────────────────
 
     public JPanel buildSpacePanel() {
         JPanel panel = new JPanel(new GridLayout(4, 2, 4, 4));
@@ -93,6 +99,8 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         return panel;
     }
 
+    // ── Capacity summary ──────────────────────────────────────────────────────
+
     public JPanel buildCapacityPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Capacity"));
@@ -101,11 +109,10 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         summary.setEditable(false);
         summary.setFont(new Font("Monospaced", Font.PLAIN, 11));
 
-        // Populate per-floor summary
         StringBuilder sb = new StringBuilder();
         for (var floor : mainController.getParkingStructure().getFloors()) {
-            int cap  = floor.getCapacity();
-            int occ  = floor.getOccupiedCount();
+            int cap   = floor.getCapacity();
+            int occ   = floor.getOccupiedCount();
             int avail = cap - occ;
             sb.append(String.format("Floor %d: %d/%d occupied (%d avail)%n",
                     floor.getFloorNumber(), occ, cap, avail));
@@ -115,39 +122,10 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         return panel;
     }
 
-    public JPanel buildSessionPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Sessions & Transactions"));
-
-        sessionTableModel = new DefaultTableModel(
-                new String[]{"Session ID", "Space", "Floor", "Entry Time"}, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return false; }
-        };
-        transactionTableModel = new DefaultTableModel(
-                new String[]{"Session ID", "Exit Time", "Fee ($)"}, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return false; }
-        };
-
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.add("Active Sessions", new JScrollPane(new JTable(sessionTableModel)));
-        tabs.add("Transactions",    new JScrollPane(new JTable(transactionTableModel)));
-
-        JButton exportBtn = new JButton("Export CSV");
-        exportBtn.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser();
-            if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-                mainController.getAdminCommands()
-                        .exportData(chooser.getSelectedFile().getAbsolutePath());
-            }
-        });
-
-        panel.add(tabs,      BorderLayout.CENTER);
-        panel.add(exportBtn, BorderLayout.SOUTH);
-        return panel;
-    }
+    // ── Simulation ────────────────────────────────────────────────────────────
 
     public JPanel buildSimulationPanel() {
-        JPanel panel = new JPanel(new FlowLayout());
+        JPanel panel = new JPanel(new GridLayout(2, 2, 4, 4));
         panel.setBorder(BorderFactory.createTitledBorder("Simulation"));
 
         JButton entryBtn = new JButton("Simulate Entry");
@@ -168,22 +146,98 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
             if (selected != null) mainController.getAdminCommands().simulateExit(selected);
         });
 
+        JButton autoBtn = new JButton("▶  Auto Simulate");
+        autoBtn.setBackground(new Color(34, 139, 34));
+        autoBtn.setForeground(Color.WHITE);
+        autoBtn.setOpaque(true);
+        autoBtn.setFont(autoBtn.getFont().deriveFont(Font.BOLD));
+        autoBtn.addActionListener(e -> {
+            if (simulationEngine == null) {
+                simulationEngine = new SimulationEngine(mainController);
+            }
+            if (simulationEngine.isRunning()) {
+                simulationEngine.stop();
+                autoBtn.setText("▶  Auto Simulate");
+                autoBtn.setBackground(new Color(34, 139, 34));
+            } else {
+                simulationEngine.start();
+                autoBtn.setText("⏹  Stop Simulation");
+                autoBtn.setBackground(new Color(180, 30, 30));
+            }
+        });
+
         panel.add(entryBtn);
         panel.add(exitBtn);
+        panel.add(autoBtn);
+        panel.add(new JLabel());   // empty fourth cell
         return panel;
     }
+
+    // ── Sessions & Transactions ───────────────────────────────────────────────
+
+    public JPanel buildSessionPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Sessions & Transactions"));
+
+        sessionTableModel = new DefaultTableModel(
+                new String[]{"Session ID", "Space", "Floor", "Entry Time"}, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        transactionTableModel = new DefaultTableModel(
+                new String[]{"Session ID", "Exit Time", "Fee ($)"}, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+
+        JTable sessionTable     = new JTable(sessionTableModel);
+        JTable transactionTable = new JTable(transactionTableModel);
+
+        // ── Clear buttons ─────────────────────────────────────────────────────
+        JButton clearSessionsBtn = new JButton("Clear");
+        clearSessionsBtn.setToolTipText("Clear active sessions display");
+        clearSessionsBtn.addActionListener(e -> sessionTableModel.setRowCount(0));
+
+        JButton clearTransBtn = new JButton("Clear");
+        clearTransBtn.setToolTipText("Clear transactions display");
+        clearTransBtn.addActionListener(e -> transactionTableModel.setRowCount(0));
+
+        // Wrap each table with its clear button in a titled sub-panel
+        JPanel sessionTab = new JPanel(new BorderLayout());
+        sessionTab.add(new JScrollPane(sessionTable), BorderLayout.CENTER);
+        sessionTab.add(clearSessionsBtn, BorderLayout.SOUTH);
+
+        JPanel transactionTab = new JPanel(new BorderLayout());
+        transactionTab.add(new JScrollPane(transactionTable), BorderLayout.CENTER);
+        transactionTab.add(clearTransBtn, BorderLayout.SOUTH);
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.add("Active Sessions", sessionTab);
+        tabs.add("Transactions",    transactionTab);
+
+        JButton exportBtn = new JButton("Export CSV");
+        exportBtn.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser();
+            if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                mainController.getAdminCommands()
+                        .exportData(chooser.getSelectedFile().getAbsolutePath());
+            }
+        });
+
+        panel.add(tabs,      BorderLayout.CENTER);
+        panel.add(exportBtn, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    // ── SystemObserver ────────────────────────────────────────────────────────
 
     @Override
     public void onSystemEvent(SystemEvent event) {
         SwingUtilities.invokeLater(() -> {
-            // Refresh active-session table
             sessionTableModel.setRowCount(0);
             for (Session s : mainController.getDataStoreDriver()
                     .getSessionLogger().getActiveSessions()) {
                 sessionTableModel.addRow(new Object[]{
                         s.getSessionId(), s.getSpaceId(), s.getFloor(), s.getEntryTime()});
             }
-            // Refresh completed-transaction table
             transactionTableModel.setRowCount(0);
             for (var t : mainController.getDataStoreDriver()
                     .getTransactionArchive().getAllTransactions()) {

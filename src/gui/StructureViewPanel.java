@@ -37,7 +37,6 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         canvas = new DrawingCanvas();
         add(new JScrollPane(canvas), BorderLayout.CENTER);
 
-        // Legend
         add(buildLegend(), BorderLayout.SOUTH);
     }
 
@@ -59,9 +58,9 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
     private JPanel buildLegend() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
         panel.add(legendSwatch("Available",  new Color(100, 200, 100)));
-        panel.add(legendSwatch("Occupied",   new Color(70,  130, 200)));
-        panel.add(legendSwatch("Restricted", Color.GRAY));
-        panel.add(legendSwatch("Reserved",   Color.RED));
+        panel.add(legendSwatch("Occupied",   new Color( 70, 130, 200)));
+        panel.add(legendSwatch("Restricted", Color.LIGHT_GRAY));
+        panel.add(legendSwatch("Reserved",   new Color(220,  80,  80)));
         return panel;
     }
 
@@ -75,7 +74,6 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         return wrapper;
     }
 
-    /** Renders all spaces and markers for the specified floor onto g. */
     public void paintFloor(Graphics2D g, int floor) {
         Floor f = parkingStructure.getFloor(floor);
         if (f == null) return;
@@ -102,7 +100,6 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
                 g2.setColor(Color.DARK_GRAY);
                 g2.drawRect(x, y, CELL_SIZE, CELL_SIZE);
 
-                // Space ID label (small)
                 g2.setColor(Color.BLACK);
                 g2.setFont(new Font("Arial", Font.PLAIN, 8));
                 g2.drawString(space.getSpaceId(), x + 2, y + CELL_SIZE - 4);
@@ -121,17 +118,13 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
     private Color getSpaceColor(SpaceState state) {
         switch (state) {
             case AVAILABLE:  return new Color(100, 200, 100);
-            case OCCUPIED:   return new Color(70,  130, 200);
+            case OCCUPIED:   return new Color( 70, 130, 200);
             case RESTRICTED: return Color.LIGHT_GRAY;
-            case RESERVED:   return new Color(220, 80, 80);
+            case RESERVED:   return new Color(220,  80,  80);
             default:         return Color.WHITE;
         }
     }
 
-    /**
-     * Translates a mouse click position to the corresponding ParkingSpace,
-     * accounting for zoom and pan.
-     */
     public ParkingSpace getSpaceAtPoint(Point p) {
         Floor f = parkingStructure.getFloor(selectedFloor);
         if (f == null) return null;
@@ -143,34 +136,28 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         return null;
     }
 
-    public void showTooltip(ParkingSpace space) {
-        // Tooltip text is set on the canvas via ToolTipManager
-    }
-
     @Override
     public void onSystemEvent(SystemEvent event) {
         SwingUtilities.invokeLater(canvas::repaint);
     }
 
-    // ── Inner drawing canvas ───────────────────────────────────────────────────
+    // ── Inner drawing canvas ──────────────────────────────────────────────────
 
     private class DrawingCanvas extends JPanel {
 
         DrawingCanvas() {
             setPreferredSize(new Dimension(800, 600));
             setBackground(Color.WHITE);
-            setToolTipText("");   // enables tooltip machinery
+            setToolTipText("");
 
-            // Zoom: mouse wheel
             addMouseWheelListener(e -> {
                 zoomLevel = Math.max(0.5, Math.min(3.0, zoomLevel - e.getWheelRotation() * 0.1));
                 repaint();
             });
 
-            // Pan: click-drag
             final Point[] dragStart = {null};
             addMouseListener(new MouseAdapter() {
-                @Override public void mousePressed(MouseEvent e) { dragStart[0] = e.getPoint(); }
+                @Override public void mousePressed(MouseEvent e)  { dragStart[0] = e.getPoint(); }
                 @Override public void mouseReleased(MouseEvent e) { dragStart[0] = null; }
             });
             addMouseMotionListener(new MouseMotionAdapter() {

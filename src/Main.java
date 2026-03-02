@@ -1,3 +1,5 @@
+package src;
+
 import controller.*;
 import datastore.DataStoreDriver;
 import enums.AllocationStrategy;

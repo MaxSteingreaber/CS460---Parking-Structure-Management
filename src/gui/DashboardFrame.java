@@ -12,8 +12,12 @@ import java.awt.event.WindowEvent;
 
 /**
  * Top-level Swing JFrame hosting the entire dashboard application.
- * Organizes the four-region layout: banner (N), control console (W),
- * structure view (C), and event log (S).
+ * Layout:
+ *   NORTH  — BannerPanel         (status + clock)
+ *   WEST   — ControlConsolePanel (admin controls)
+ *   CENTER — StructureViewPanel  (floor grid)
+ *   SOUTH  — EventLogPanel       (sensor event log)
+ *   EAST   — DriverDisplayPanel  (LED-style driver guidance display)
  */
 public class DashboardFrame extends JFrame implements SystemObserver {
 
@@ -22,18 +26,23 @@ public class DashboardFrame extends JFrame implements SystemObserver {
     private final ControlConsolePanel controlConsole;
     private final StructureViewPanel  structureView;
     private final EventLogPanel       eventLog;
+    private final DriverDisplayPanel  driverDisplay;
 
     public DashboardFrame(MainController mainController) {
         this.mainController = mainController;
-        this.bannerPanel    = new BannerPanel(mainController.getParkingStructure().getStructureName());
+        this.bannerPanel    = new BannerPanel(
+                mainController.getParkingStructure().getStructureName());
         this.controlConsole = new ControlConsolePanel(mainController);
-        this.structureView  = new StructureViewPanel(mainController.getParkingStructure());
+        this.structureView  = new StructureViewPanel(
+                mainController.getParkingStructure());
         this.eventLog       = new EventLogPanel();
+        this.driverDisplay  = new DriverDisplayPanel(mainController);
 
         mainController.addObserver(this);
         mainController.addObserver(controlConsole);
         mainController.addObserver(structureView);
         mainController.addObserver(eventLog);
+        mainController.addObserver(driverDisplay);
 
         initializeLayout();
         bannerPanel.startClock();
@@ -50,7 +59,7 @@ public class DashboardFrame extends JFrame implements SystemObserver {
         });
 
         pack();
-        setMinimumSize(new Dimension(1200, 800));
+        setMinimumSize(new Dimension(1400, 800));
         setLocationRelativeTo(null);
     }
 
@@ -60,6 +69,7 @@ public class DashboardFrame extends JFrame implements SystemObserver {
         add(controlConsole, BorderLayout.WEST);
         add(structureView,  BorderLayout.CENTER);
         add(eventLog,       BorderLayout.SOUTH);
+        add(driverDisplay,  BorderLayout.EAST);
     }
 
     public void updateBanner(SystemState state) {
