@@ -29,8 +29,8 @@ import java.util.stream.Collectors;
  */
 public class SimulationEngine {
 
-    private static final int    CYCLE_SECONDS          = 8;
-    private static final long   STEP_MS                = 800;
+    private static final int    CYCLE_SECONDS          = 15;
+    private static final long   STEP_MS                = 1200;
     private static final double SUGGESTION_FOLLOW_RATE = 0.80;
     private static final long   MIN_PARK_SECONDS       = 15;
     private static final double RATE_PER_HOUR          = 2.50;
