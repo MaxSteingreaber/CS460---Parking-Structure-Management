@@ -1,22 +1,40 @@
 package gui;
 
 import controller.MainController;
+import model.Floor;
 import model.Session;
 import observer.SystemEvent;
 import observer.SystemObserver;
 import simulation.SimulationEngine;
 
 import javax.swing.*;
+import javax.swing.border.LineBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ControlConsolePanel extends JPanel implements SystemObserver {
 
-    private final MainController     mainController;
-    private DefaultTableModel        sessionTableModel;
-    private DefaultTableModel        transactionTableModel;
-    private SimulationEngine         simulationEngine;
+    private final MainController  mainController;
+    private SimulationEngine      simulationEngine;
+
+    // ── Capacity panel — color-coded progress bars ────────────────────────────
+    private final List<JProgressBar> floorBars     = new ArrayList<>();
+    private JLabel                   capTotalLabel;
+    private JLabel                   capInTransitLabel;
+
+    // ── Session table ─────────────────────────────────────────────────────────
+    private DefaultTableModel     sessionTableModel;
+    /** Session IDs suppressed from the display until they naturally close. */
+    private final Set<String>     hiddenSessionIds  = new HashSet<>();
+
+    // ── Transaction table ─────────────────────────────────────────────────────
+    private DefaultTableModel     transactionTableModel;
+    /** Transactions before this index are hidden after a Clear. */
+    private int                   transactionOffset = 0;
 
     public ControlConsolePanel(MainController mainController) {
         this.mainController = mainController;
@@ -34,13 +52,16 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
     // ── Emergency ─────────────────────────────────────────────────────────────
 
     public JPanel buildEmergencyPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 2, 4, 0));
+        JPanel panel = new JPanel(new GridLayout(1, 2, 6, 0));
         panel.setBorder(BorderFactory.createTitledBorder("Emergency"));
 
-        JButton activateBtn = new JButton("Activate");
-        activateBtn.setBackground(Color.RED);
+        JButton activateBtn = new JButton("⚠  ACTIVATE");
+        activateBtn.setBackground(new Color(180, 0, 0));
         activateBtn.setForeground(Color.WHITE);
+        activateBtn.setFont(new Font("Arial", Font.BOLD, 13));
         activateBtn.setOpaque(true);
+        activateBtn.setBorder(new LineBorder(new Color(255, 80, 80), 2));
+        activateBtn.setPreferredSize(new Dimension(0, 40));
         activateBtn.addActionListener(e -> {
             int r = JOptionPane.showConfirmDialog(this,
                     "Activate emergency state?", "Confirm Emergency",
@@ -48,7 +69,9 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
             if (r == JOptionPane.YES_OPTION) mainController.getAdminCommands().triggerEmergency();
         });
 
-        JButton deactivateBtn = new JButton("Deactivate");
+        JButton deactivateBtn = new JButton("✔  Deactivate");
+        deactivateBtn.setFont(new Font("Arial", Font.BOLD, 12));
+        deactivateBtn.setPreferredSize(new Dimension(0, 40));
         deactivateBtn.addActionListener(e -> {
             int r = JOptionPane.showConfirmDialog(this,
                     "Deactivate emergency state?", "Confirm",
@@ -99,40 +122,133 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         return panel;
     }
 
-    // ── Capacity summary ──────────────────────────────────────────────────────
+    // ── Capacity ──────────────────────────────────────────────────────────────
 
     public JPanel buildCapacityPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Capacity"));
+        JPanel outer = new JPanel(new BorderLayout());
+        outer.setBorder(BorderFactory.createTitledBorder("Capacity"));
+        outer.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
+        outer.setMinimumSize(new Dimension(0, 160));
 
-        JTextArea summary = new JTextArea(4, 20);
-        summary.setEditable(false);
-        summary.setFont(new Font("Monospaced", Font.PLAIN, 11));
+        // Dark display board background
+        JPanel board = new JPanel();
+        board.setLayout(new BoxLayout(board, BoxLayout.Y_AXIS));
+        board.setBackground(new Color(16, 16, 16));
+        board.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 
-        StringBuilder sb = new StringBuilder();
-        for (var floor : mainController.getParkingStructure().getFloors()) {
-            int cap   = floor.getCapacity();
-            int occ   = floor.getOccupiedCount();
-            int avail = cap - occ;
-            sb.append(String.format("Floor %d: %d/%d occupied (%d avail)%n",
-                    floor.getFloorNumber(), occ, cap, avail));
+        // ── Per-floor rows ────────────────────────────────────────────────────
+        for (Floor f : mainController.getParkingStructure().getFloors()) {
+            JPanel row = new JPanel(new BorderLayout(8, 0));
+            row.setBackground(new Color(16, 16, 16));
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+            row.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+
+            JLabel lbl = new JLabel("F" + f.getFloorNumber());
+            lbl.setFont(new Font("Monospaced", Font.BOLD, 13));
+            lbl.setForeground(new Color(190, 190, 190));
+            lbl.setPreferredSize(new Dimension(24, 0));
+
+            JProgressBar bar = new JProgressBar(0, f.getCapacity());
+            bar.setValue(f.getCapacity());  // all available initially
+            bar.setStringPainted(true);
+            bar.setFont(new Font("Monospaced", Font.BOLD, 10));
+            bar.setBackground(new Color(38, 38, 38));
+            bar.setForeground(new Color(0, 210, 80));
+            bar.setBorderPainted(false);
+            floorBars.add(bar);
+
+            row.add(lbl, BorderLayout.WEST);
+            row.add(bar, BorderLayout.CENTER);
+            board.add(row);
         }
-        summary.setText(sb.toString());
-        panel.add(new JScrollPane(summary), BorderLayout.CENTER);
-        return panel;
+
+        // ── Separator ─────────────────────────────────────────────────────────
+        board.add(Box.createVerticalStrut(5));
+        JSeparator sep = new JSeparator();
+        sep.setForeground(new Color(55, 55, 55));
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        board.add(sep);
+        board.add(Box.createVerticalStrut(4));
+
+        // ── Totals ────────────────────────────────────────────────────────────
+        capTotalLabel = new JLabel("Total: --");
+        capTotalLabel.setFont(new Font("Monospaced", Font.BOLD, 11));
+        capTotalLabel.setForeground(new Color(210, 210, 210));
+        capTotalLabel.setAlignmentX(LEFT_ALIGNMENT);
+
+        capInTransitLabel = new JLabel("In-Transit: 0 vehicles");
+        capInTransitLabel.setFont(new Font("Monospaced", Font.BOLD, 11));
+        capInTransitLabel.setForeground(new Color(80, 80, 80));
+        capInTransitLabel.setAlignmentX(LEFT_ALIGNMENT);
+
+        board.add(capTotalLabel);
+        board.add(Box.createVerticalStrut(2));
+        board.add(capInTransitLabel);
+
+        refreshCapacity();
+        outer.add(board, BorderLayout.CENTER);
+        return outer;
+    }
+
+    /**
+     * Updates all per-floor progress bars and summary labels from live data.
+     * Bar colour: green (>50% free) → amber (25–50%) → red (<25%).
+     * Must be called on the EDT.
+     */
+    private void refreshCapacity() {
+        List<Floor> floors = mainController.getParkingStructure().getFloors();
+        int totalCap = 0, totalOcc = 0;
+
+        for (int i = 0; i < floors.size() && i < floorBars.size(); i++) {
+            Floor f      = floors.get(i);
+            int   cap    = f.getCapacity();
+            int   occ    = f.getOccupiedCount();
+            int   avail  = cap - occ;
+            totalCap += cap;
+            totalOcc += occ;
+
+            JProgressBar bar = floorBars.get(i);
+            bar.setMaximum(cap);
+            bar.setValue(avail);
+            bar.setString(avail + " / " + cap + " free");
+
+            double ratio = cap > 0 ? (double) avail / cap : 0;
+            if      (ratio > 0.50) bar.setForeground(new Color(0,   210,  80));
+            else if (ratio > 0.25) bar.setForeground(new Color(255, 175,   0));
+            else                   bar.setForeground(new Color(220,  50,  50));
+        }
+
+        if (capTotalLabel != null) {
+            int avail = totalCap - totalOcc;
+            capTotalLabel.setText(String.format("Total: %d/%d occ  (%d free)",
+                    totalOcc, totalCap, avail));
+            double ratio = totalCap > 0 ? (double) avail / totalCap : 0;
+            if      (ratio > 0.50) capTotalLabel.setForeground(new Color(0,   210,  80));
+            else if (ratio > 0.25) capTotalLabel.setForeground(new Color(255, 175,   0));
+            else                   capTotalLabel.setForeground(new Color(220,  50,  50));
+        }
+
+        if (capInTransitLabel != null) {
+            int it = mainController.getInTransitCount();
+            capInTransitLabel.setText("In-Transit: " + it + " vehicle" + (it == 1 ? "" : "s"));
+            capInTransitLabel.setForeground(it > 0
+                    ? new Color(100, 180, 255)
+                    : new Color(80, 80, 80));
+        }
     }
 
     // ── Simulation ────────────────────────────────────────────────────────────
 
     public JPanel buildSimulationPanel() {
-        JPanel panel = new JPanel(new GridLayout(2, 2, 4, 4));
+        JPanel panel = new JPanel(new GridLayout(2, 2, 6, 6));
         panel.setBorder(BorderFactory.createTitledBorder("Simulation"));
 
-        JButton entryBtn = new JButton("Simulate Entry");
-        entryBtn.addActionListener(e -> mainController.getAdminCommands().simulateEntry());
+        // ── Manual one-shot buttons ───────────────────────────────────────────
+        JButton manualEntryBtn = new JButton("Manual Entry");
+        manualEntryBtn.addActionListener(e -> mainController.getAdminCommands().simulateEntry());
 
-        JButton exitBtn = new JButton("Simulate Exit");
-        exitBtn.addActionListener(e -> {
+        JButton manualExitBtn = new JButton("Manual Exit");
+        manualExitBtn.addActionListener(e -> {
             List<Session> active = mainController.getDataStoreDriver()
                     .getSessionLogger().getActiveSessions();
             if (active.isEmpty()) {
@@ -146,30 +262,62 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
             if (selected != null) mainController.getAdminCommands().simulateExit(selected);
         });
 
-        JButton autoBtn = new JButton("▶  Auto Simulate");
-        autoBtn.setBackground(new Color(34, 139, 34));
-        autoBtn.setForeground(Color.WHITE);
-        autoBtn.setOpaque(true);
-        autoBtn.setFont(autoBtn.getFont().deriveFont(Font.BOLD));
-        autoBtn.addActionListener(e -> {
-            if (simulationEngine == null) {
+        // ── Auto Entry toggle ─────────────────────────────────────────────────
+        JButton autoEntryBtn = new JButton("▶  Auto Entry");
+        autoEntryBtn.setBackground(new Color(20, 100, 170));
+        autoEntryBtn.setForeground(Color.WHITE);
+        autoEntryBtn.setFont(new Font("Arial", Font.BOLD, 12));
+        autoEntryBtn.setOpaque(true);
+        autoEntryBtn.setBorder(new LineBorder(new Color(80, 160, 255), 2));
+        autoEntryBtn.setPreferredSize(new Dimension(0, 38));
+
+        autoEntryBtn.addActionListener(e -> {
+            if (simulationEngine == null)
                 simulationEngine = new SimulationEngine(mainController);
-            }
-            if (simulationEngine.isRunning()) {
-                simulationEngine.stop();
-                autoBtn.setText("▶  Auto Simulate");
-                autoBtn.setBackground(new Color(34, 139, 34));
+
+            if (simulationEngine.isEntryRunning()) {
+                simulationEngine.stopEntry();
+                autoEntryBtn.setText("▶  Auto Entry");
+                autoEntryBtn.setBackground(new Color(20, 100, 170));
+                autoEntryBtn.setBorder(new LineBorder(new Color(80, 160, 255), 2));
             } else {
-                simulationEngine.start();
-                autoBtn.setText("⏹  Stop Simulation");
-                autoBtn.setBackground(new Color(180, 30, 30));
+                simulationEngine.startEntry();
+                autoEntryBtn.setText("⏹  Stop Entry");
+                autoEntryBtn.setBackground(new Color(160, 20, 20));
+                autoEntryBtn.setBorder(new LineBorder(new Color(255, 80, 80), 2));
             }
         });
 
-        panel.add(entryBtn);
-        panel.add(exitBtn);
-        panel.add(autoBtn);
-        panel.add(new JLabel());   // empty fourth cell
+        // ── Auto Exit toggle ──────────────────────────────────────────────────
+        JButton autoExitBtn = new JButton("▶  Auto Exit");
+        autoExitBtn.setBackground(new Color(20, 130, 40));
+        autoExitBtn.setForeground(Color.WHITE);
+        autoExitBtn.setFont(new Font("Arial", Font.BOLD, 12));
+        autoExitBtn.setOpaque(true);
+        autoExitBtn.setBorder(new LineBorder(new Color(60, 200, 80), 2));
+        autoExitBtn.setPreferredSize(new Dimension(0, 38));
+
+        autoExitBtn.addActionListener(e -> {
+            if (simulationEngine == null)
+                simulationEngine = new SimulationEngine(mainController);
+
+            if (simulationEngine.isExitRunning()) {
+                simulationEngine.stopExit();
+                autoExitBtn.setText("▶  Auto Exit");
+                autoExitBtn.setBackground(new Color(20, 130, 40));
+                autoExitBtn.setBorder(new LineBorder(new Color(60, 200, 80), 2));
+            } else {
+                simulationEngine.startExit();
+                autoExitBtn.setText("⏹  Stop Exit");
+                autoExitBtn.setBackground(new Color(160, 20, 20));
+                autoExitBtn.setBorder(new LineBorder(new Color(255, 80, 80), 2));
+            }
+        });
+
+        panel.add(manualEntryBtn);
+        panel.add(manualExitBtn);
+        panel.add(autoEntryBtn);
+        panel.add(autoExitBtn);
         return panel;
     }
 
@@ -191,22 +339,21 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         JTable sessionTable     = new JTable(sessionTableModel);
         JTable transactionTable = new JTable(transactionTableModel);
 
-        // ── Clear buttons ─────────────────────────────────────────────────────
-        JButton clearSessionsBtn = new JButton("Clear");
-        clearSessionsBtn.setToolTipText("Clear active sessions display");
+        JButton clearSessionsBtn = new JButton("Clear Display");
         clearSessionsBtn.addActionListener(e -> {
+            List<Session> current = mainController.getDataStoreDriver()
+                    .getSessionLogger().getActiveSessions();
+            for (Session s : current) hiddenSessionIds.add(s.getSessionId());
             sessionTableModel.setRowCount(0);
-            mainController.getDataStoreDriver().clearSessions();
         });
 
-        JButton clearTransBtn = new JButton("Clear");
-        clearTransBtn.setToolTipText("Clear transactions display");
+        JButton clearTransBtn = new JButton("Clear Display");
         clearTransBtn.addActionListener(e -> {
+            transactionOffset = mainController.getDataStoreDriver()
+                    .getTransactionArchive().getAllTransactions().size();
             transactionTableModel.setRowCount(0);
-            mainController.getDataStoreDriver().clearTransactions();
         });
 
-        // Wrap each table with its clear button in a titled sub-panel
         JPanel sessionTab = new JPanel(new BorderLayout());
         sessionTab.add(new JScrollPane(sessionTable), BorderLayout.CENTER);
         sessionTab.add(clearSessionsBtn, BorderLayout.SOUTH);
@@ -238,15 +385,33 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
     @Override
     public void onSystemEvent(SystemEvent event) {
         SwingUtilities.invokeLater(() -> {
+
+            // ── Capacity bars (always live) ───────────────────────────────────
+            refreshCapacity();
+
+            // ── Active sessions (suppress hidden IDs) ─────────────────────────
             sessionTableModel.setRowCount(0);
             for (Session s : mainController.getDataStoreDriver()
                     .getSessionLogger().getActiveSessions()) {
-                sessionTableModel.addRow(new Object[]{
-                        s.getSessionId(), s.getSpaceId(), s.getFloor(), s.getEntryTime()});
+                if (!hiddenSessionIds.contains(s.getSessionId())) {
+                    sessionTableModel.addRow(new Object[]{
+                            s.getSessionId(), s.getSpaceId(),
+                            s.getFloor(), s.getEntryTime()});
+                }
             }
+            // Prune hidden set — once a session closes it leaves getActiveSessions()
+            List<Session> stillActive = mainController.getDataStoreDriver()
+                    .getSessionLogger().getActiveSessions();
+            Set<String> activeIds = new HashSet<>();
+            for (Session s : stillActive) activeIds.add(s.getSessionId());
+            hiddenSessionIds.retainAll(activeIds);
+
+            // ── Transactions (only post-offset entries) ───────────────────────
             transactionTableModel.setRowCount(0);
-            for (var t : mainController.getDataStoreDriver()
-                    .getTransactionArchive().getAllTransactions()) {
+            var allTrans = mainController.getDataStoreDriver()
+                    .getTransactionArchive().getAllTransactions();
+            for (int i = transactionOffset; i < allTrans.size(); i++) {
+                var t = allTrans.get(i);
                 transactionTableModel.addRow(new Object[]{
                         t.getSessionId(), t.getExitTime(),
                         String.format("%.2f", t.getFee())});

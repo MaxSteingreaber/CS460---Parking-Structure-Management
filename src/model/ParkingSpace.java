@@ -26,7 +26,23 @@ public class ParkingSpace {
         this.pendingRestriction = false;
     }
 
-    /** Transitions the space to OCCUPIED and records the session. Fires a state-change event. */
+    /**
+     * Marks the space as IN_TRANSIT: the vehicle has been assigned here and
+     * is travelling from the entry gate. The space is locked for this session
+     * so it cannot be double-allocated, but it still renders GREEN on the grid
+     * until the weight sensor confirms arrival (occupy() is called).
+     */
+    public void inTransit(String sessionId) {
+        SpaceState old = this.state;
+        this.sessionId = sessionId;
+        this.state     = SpaceState.IN_TRANSIT;
+        pcs.firePropertyChange("state", old, this.state);
+    }
+
+    /**
+     * Weight sensor confirmed — transitions to OCCUPIED (renders RED).
+     * Works from both AVAILABLE and IN_TRANSIT states.
+     */
     public void occupy(String sessionId) {
         SpaceState old = this.state;
         this.sessionId = sessionId;
@@ -34,7 +50,7 @@ public class ParkingSpace {
         pcs.firePropertyChange("state", old, this.state);
     }
 
-    /** Transitions the space to AVAILABLE (or RESTRICTED if pending). Clears the session. Fires a state-change event. */
+    /** Frees the space back to AVAILABLE (or RESTRICTED if pending). */
     public void vacate() {
         SpaceState old = this.state;
         this.sessionId = null;
@@ -43,7 +59,6 @@ public class ParkingSpace {
         pcs.firePropertyChange("state", old, this.state);
     }
 
-    /** If available, transitions to RESTRICTED immediately. If occupied, sets pendingRestriction flag. */
     public void restrict() {
         if (state == SpaceState.OCCUPIED) {
             pendingRestriction = true;
@@ -54,7 +69,6 @@ public class ParkingSpace {
         }
     }
 
-    /** Transitions from RESTRICTED to AVAILABLE. Clears pendingRestriction flag. */
     public void unrestrict() {
         pendingRestriction = false;
         if (state == SpaceState.RESTRICTED) {
@@ -79,13 +93,8 @@ public class ParkingSpace {
         }
     }
 
-    public void addPropertyChangeListener(PropertyChangeListener listener) {
-        pcs.addPropertyChangeListener(listener);
-    }
-
-    public void removePropertyChangeListener(PropertyChangeListener listener) {
-        pcs.removePropertyChangeListener(listener);
-    }
+    public void addPropertyChangeListener(PropertyChangeListener l)    { pcs.addPropertyChangeListener(l); }
+    public void removePropertyChangeListener(PropertyChangeListener l) { pcs.removePropertyChangeListener(l); }
 
     public SpaceState getState()           { return state; }
     public String getSpaceId()             { return spaceId; }
