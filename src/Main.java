@@ -27,7 +27,7 @@ public class Main {
             // ── Build parking structure: 3 floors, 4 rows × 6 columns ──────────
             List<Floor> floors = new ArrayList<>();
             for (int i = 1; i <= 3; i++) {
-                floors.add(new Floor(i, 4, 6));
+                floors.add(new Floor(i, 5, 7));
             }
             ParkingStructure structure = new ParkingStructure("Demo Parking Structure", floors);
 

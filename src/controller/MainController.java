@@ -260,11 +260,8 @@ public class MainController {
 
     private Optional<ParkingSpace> findSpaceById(String spaceId) {
         for (Floor floor : parkingStructure.getFloors()) {
-            for (int r = 0; r < floor.getRows(); r++) {
-                for (int c = 0; c < floor.getColumns(); c++) {
-                    ParkingSpace space = floor.getSpace(r, c);
-                    if (space.getSpaceId().equals(spaceId)) return Optional.of(space);
-                }
+            for (ParkingSpace space: floor.getSpaces()) {
+                if (space.getSpaceId().equals(spaceId)) return Optional.of(space);
             }
         }
         return Optional.empty();

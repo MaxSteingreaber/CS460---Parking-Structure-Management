@@ -65,5 +65,9 @@ public class TransactionArchive implements Serializable {
         }
     }
 
+    public void clearAllTransactions() {
+        transactions.clear();
+    }
+
     public List<Transaction> getAllTransactions() { return transactions; }
 }

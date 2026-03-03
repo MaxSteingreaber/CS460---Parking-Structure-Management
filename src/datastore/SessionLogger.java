@@ -44,5 +44,9 @@ public class SessionLogger implements Serializable {
                 .findFirst();
     }
 
+    public void clearAllSessions() {
+        sessions.clear();
+    }
+
     public List<Session> getAllSessions() { return sessions; }
 }

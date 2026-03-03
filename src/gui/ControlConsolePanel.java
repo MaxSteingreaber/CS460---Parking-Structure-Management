@@ -194,11 +194,17 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
         // ── Clear buttons ─────────────────────────────────────────────────────
         JButton clearSessionsBtn = new JButton("Clear");
         clearSessionsBtn.setToolTipText("Clear active sessions display");
-        clearSessionsBtn.addActionListener(e -> sessionTableModel.setRowCount(0));
+        clearSessionsBtn.addActionListener(e -> {
+            sessionTableModel.setRowCount(0);
+            mainController.getDataStoreDriver().clearSessions();
+        });
 
         JButton clearTransBtn = new JButton("Clear");
         clearTransBtn.setToolTipText("Clear transactions display");
-        clearTransBtn.addActionListener(e -> transactionTableModel.setRowCount(0));
+        clearTransBtn.addActionListener(e -> {
+            transactionTableModel.setRowCount(0);
+            mainController.getDataStoreDriver().clearTransactions();
+        });
 
         // Wrap each table with its clear button in a titled sub-panel
         JPanel sessionTab = new JPanel(new BorderLayout());

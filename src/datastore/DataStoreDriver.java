@@ -66,6 +66,16 @@ public class DataStoreDriver {
         }
     }
 
+    public void clearSessions() {
+        sessionLogger.clearAllSessions();
+        persist(SESSION_FILE, sessionLogger);
+    }
+
+    public void clearTransactions() {
+        transactionArchive.clearAllTransactions();
+        persist(TRANSACTION_FILE, transactionArchive);
+    }
+
     public SessionLogger     getSessionLogger()      { return sessionLogger; }
     public CapacityMonitor   getCapacityMonitor()    { return capacityMonitor; }
     public TransactionArchive getTransactionArchive(){ return transactionArchive; }

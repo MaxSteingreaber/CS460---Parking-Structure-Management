@@ -1,5 +1,6 @@
 package model;
 
+import enums.SpaceOrientation;
 import enums.SpaceState;
 
 import java.beans.PropertyChangeListener;
@@ -11,17 +12,15 @@ public class ParkingSpace {
     private SpaceState state;
     private String sessionId;
     private final int floor;
-    private final int row;
-    private final int col;
+    private SpaceOrientation ori;
     private boolean pendingRestriction;
 
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
 
-    public ParkingSpace(String spaceId, int floor, int row, int col) {
+    public ParkingSpace(String spaceId, SpaceOrientation ori, int floor) {
         this.spaceId   = spaceId;
+        this.ori       = ori;
         this.floor     = floor;
-        this.row       = row;
-        this.col       = col;
         this.state     = SpaceState.AVAILABLE;
         this.sessionId = null;
         this.pendingRestriction = false;
@@ -92,7 +91,5 @@ public class ParkingSpace {
     public String getSpaceId()             { return spaceId; }
     public String getSessionId()           { return sessionId; }
     public int getFloor()                  { return floor; }
-    public int getRow()                    { return row; }
-    public int getCol()                    { return col; }
     public boolean isPendingRestriction()  { return pendingRestriction; }
 }

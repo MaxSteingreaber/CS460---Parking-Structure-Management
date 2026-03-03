@@ -10,6 +10,7 @@ import observer.SystemObserver;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.ArrayList;
 
 public class StructureViewPanel extends JPanel implements SystemObserver {
 
@@ -83,35 +84,189 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         g2.translate(panOffset.x, panOffset.y);
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        ParkingSpace[][] spaces = f.getSpaces();
-        for (int r = 0; r < f.getRows(); r++) {
-            for (int c = 0; c < f.getColumns(); c++) {
-                ParkingSpace space = spaces[r][c];
-                int x = c * (CELL_SIZE + CELL_GAP);
-                int y = r * (CELL_SIZE + CELL_GAP);
+        final int SPACE_WIDTH = 40;      // Width of parking space
+        final int SPACE_DEPTH = 60;      // Depth of parking space
+        final int CORRIDOR_WIDTH = 80;   // Width of driving corridor
+        final int GAP = 80;              // Gap between left and top (for ramp transition)
 
-                g2.setColor(getSpaceColor(space.getState()));
-                g2.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+        ArrayList<ParkingSpace> spaces = f.getSpaces();
+        int index = 0;
+        int corridorLength = f.getPerimeterLength();
+        int corridorWidth = f.getPerimeterWidth();
 
-                if (space.getState() == SpaceState.RESTRICTED) {
-                    drawHatching(g2, x, y, CELL_SIZE);
-                }
+        // Calculate dimensions
+        int outerSpaceDepth = SPACE_DEPTH;
+        int innerSpaceDepth = SPACE_DEPTH;
 
-                g2.setColor(Color.DARK_GRAY);
-                g2.drawRect(x, y, CELL_SIZE, CELL_SIZE);
+        // Key Y positions
+        int topStartY = GAP;
+        int topCorridorY = topStartY + outerSpaceDepth;
+        int topInnerY = topCorridorY + CORRIDOR_WIDTH;
+        int sideCorridorStartY = topInnerY + innerSpaceDepth;
+        int sideCorridorEndY = sideCorridorStartY + corridorWidth * SPACE_WIDTH;
+        int bottomInnerY = sideCorridorEndY;
+        int bottomCorridorY = bottomInnerY + innerSpaceDepth;
+        int bottomOuterY = bottomCorridorY + CORRIDOR_WIDTH;
 
-                g2.setColor(Color.BLACK);
-                g2.setFont(new Font("Arial", Font.PLAIN, 8));
-                g2.drawString(space.getSpaceId(), x + 2, y + CELL_SIZE - 4);
-            }
+        // Key X positions
+        int leftCorridorX = outerSpaceDepth;
+        int leftInnerX = leftCorridorX + CORRIDOR_WIDTH;
+        int topBottomSpacesStartX = leftInnerX + innerSpaceDepth;
+        int topBottomSpacesEndX = topBottomSpacesStartX + corridorLength * SPACE_WIDTH;
+        int rightInnerX = topBottomSpacesEndX;
+        int rightCorridorX = rightInnerX + innerSpaceDepth;
+        int rightOuterX = rightCorridorX + CORRIDOR_WIDTH;
+
+
+        // ============ DRAW ALL DRIVING LANES (CONTINUOUS ROAD) ============
+        g2.setColor(new Color(200, 200, 200));
+
+        // Top corridor driving lane
+        g2.fillRect(leftCorridorX, topCorridorY,
+                rightCorridorX - leftCorridorX + CORRIDOR_WIDTH, CORRIDOR_WIDTH);
+
+        // Right corridor driving lane
+        g2.fillRect(rightCorridorX, topCorridorY,
+                CORRIDOR_WIDTH, bottomCorridorY - topCorridorY + CORRIDOR_WIDTH);
+
+        // Bottom corridor driving lane
+        g2.fillRect(leftCorridorX, bottomCorridorY,
+                rightCorridorX - leftCorridorX + CORRIDOR_WIDTH, CORRIDOR_WIDTH);
+
+        // Left corridor driving lane (ramp) with gradient - draw over the gray
+        if (f.getFloorNumber() != parkingStructure.getFloors().size()) {
+            GradientPaint rampGradient = new GradientPaint(
+                    0, sideCorridorEndY, new Color(200, 200, 200),
+                    0, sideCorridorStartY, new Color(180, 180, 200));
+            g2.setPaint(rampGradient);
+            g2.fillRect(leftCorridorX, topCorridorY,
+                    CORRIDOR_WIDTH, bottomCorridorY - topCorridorY + CORRIDOR_WIDTH);
         }
+        else {
+            g2.setColor(new Color(200, 200, 200));
+            g2.fillRect(leftCorridorX, topCorridorY,
+                    CORRIDOR_WIDTH, bottomCorridorY - topCorridorY + CORRIDOR_WIDTH);
+        }
+
+        // ============ DRAW PARKING SPACES ============
+
+        // TOP CORRIDOR - Outer row
+        for (int i = 0; i < corridorLength; i++) {
+            ParkingSpace space = spaces.get(index++);
+            int x = topBottomSpacesStartX + i * SPACE_WIDTH;
+            int y = topStartY;
+            drawParkingSpace(g2, space, x, y, SPACE_WIDTH, outerSpaceDepth, true);
+        }
+
+        // TOP CORRIDOR - Inner row
+        for (int i = 0; i < corridorLength; i++) {
+            ParkingSpace space = spaces.get(index++);
+            int x = topBottomSpacesStartX + i * SPACE_WIDTH;
+            int y = topInnerY;
+            drawParkingSpace(g2, space, x, y, SPACE_WIDTH, innerSpaceDepth, true);
+        }
+
+        // RIGHT CORRIDOR - Outer column
+        for (int i = 0; i < corridorWidth; i++) {
+            ParkingSpace space = spaces.get(index++);
+            int x = rightOuterX;
+            int y = sideCorridorStartY + i * SPACE_WIDTH;
+            drawParkingSpace(g2, space, x, y, outerSpaceDepth, SPACE_WIDTH, false);
+        }
+
+        // RIGHT CORRIDOR - Inner column
+        for (int i = 0; i < corridorWidth; i++) {
+            ParkingSpace space = spaces.get(index++);
+            int x = rightInnerX;
+            int y = sideCorridorStartY + i * SPACE_WIDTH;
+            drawParkingSpace(g2, space, x, y, innerSpaceDepth, SPACE_WIDTH, false);
+        }
+
+        // BOTTOM CORRIDOR - Outer row
+        for (int i = corridorLength - 1; i >= 0; i--) {
+            ParkingSpace space = spaces.get(index++);
+            int x = topBottomSpacesStartX + i * SPACE_WIDTH;
+            int y = bottomOuterY;
+            drawParkingSpace(g2, space, x, y, SPACE_WIDTH, outerSpaceDepth, true);
+        }
+
+        // BOTTOM CORRIDOR - Inner row
+        for (int i = corridorLength - 1; i >= 0; i--) {
+            ParkingSpace space = spaces.get(index++);
+            int x = topBottomSpacesStartX + i * SPACE_WIDTH;
+            int y = bottomInnerY;
+            drawParkingSpace(g2, space, x, y, SPACE_WIDTH, innerSpaceDepth, true);
+        }
+
+        // LEFT CORRIDOR (RAMP) - Outer column
+        for (int i = corridorWidth - 1; i >= 0; i--) {
+            ParkingSpace space = spaces.get(index++);
+            int x = 0;
+            int y = sideCorridorStartY + i * SPACE_WIDTH;
+            drawParkingSpace(g2, space, x, y, outerSpaceDepth, SPACE_WIDTH, false);
+        }
+
+        // LEFT CORRIDOR (RAMP) - Inner column
+        for (int i = corridorWidth - 1; i >= 0; i--) {
+            ParkingSpace space = spaces.get(index++);
+            int x = leftInnerX;
+            int y = sideCorridorStartY + i * SPACE_WIDTH;
+            drawParkingSpace(g2, space, x, y, innerSpaceDepth, SPACE_WIDTH, false);
+        }
+
+        // ============ DRAW RAMP INDICATORS ============
+        if (f.getFloorNumber() != parkingStructure.getFloors().size()) {
+            g2.setColor(Color.DARK_GRAY);
+            int rampCenterX = leftCorridorX + CORRIDOR_WIDTH / 2;
+            int rampCenterY = sideCorridorStartY + (corridorWidth * SPACE_WIDTH) / 2;
+
+            // Draw arrows pointing up (direction of travel to next floor)
+            g2.setStroke(new BasicStroke(2));
+            for (int arrowY = rampCenterY + 60; arrowY > rampCenterY - 80; arrowY -= 50) {
+                g2.drawLine(rampCenterX, arrowY, rampCenterX, arrowY - 30);
+                g2.drawLine(rampCenterX, arrowY - 30, rampCenterX - 8, arrowY - 20);
+                g2.drawLine(rampCenterX, arrowY - 30, rampCenterX + 8, arrowY - 20);
+            }
+
+            // Draw "UP" text
+            g2.setFont(new Font("Arial", Font.BOLD, 14));
+            g2.drawString("UP", rampCenterX - 10, rampCenterY - 100);
+        }
+
         g2.dispose();
     }
 
-    private void drawHatching(Graphics2D g, int x, int y, int size) {
-        for (int i = y; i < y + size; i += 4) {
+    private void drawParkingSpace(Graphics2D g2, ParkingSpace space,
+                                  int x, int y, int width, int height,
+                                  boolean isHorizontal) {
+        // Fill space with color based on state
+        g2.setColor(getSpaceColor(space.getState()));
+        g2.fillRect(x, y, width, height);
+
+        // Draw hatching if restricted
+        if (space.getState() == SpaceState.RESTRICTED) {
+            drawHatching(g2, x, y, width, height);
+        }
+
+        // Draw border
+        g2.setColor(Color.DARK_GRAY);
+        g2.drawRect(x, y, width, height);
+
+        // Draw space ID
+        g2.setColor(Color.BLACK);
+        g2.setFont(new Font("Arial", Font.PLAIN, 8));
+
+        if (isHorizontal) {
+            g2.drawString(space.getSpaceId(), x + 2, y + height - 4);
+        } else {
+            g2.drawString(space.getSpaceId(), x + 2, y + 12);
+        }
+    }
+
+    private void drawHatching(Graphics2D g, int x, int y, int width, int height) {
+        for (int i = y; i < y + height; i += 4) {
             g.setColor((i / 4) % 2 == 0 ? Color.LIGHT_GRAY : Color.GRAY);
-            g.fillRect(x, i, size, 2);
+            g.fillRect(x, i, width, 2);
         }
     }
 
@@ -128,12 +283,115 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
     public ParkingSpace getSpaceAtPoint(Point p) {
         Floor f = parkingStructure.getFloor(selectedFloor);
         if (f == null) return null;
-        int col = (int) ((p.x / zoomLevel - panOffset.x) / (CELL_SIZE + CELL_GAP));
-        int row = (int) ((p.y / zoomLevel - panOffset.y) / (CELL_SIZE + CELL_GAP));
-        if (row >= 0 && row < f.getRows() && col >= 0 && col < f.getColumns()) {
-            return f.getSpace(row, col);
+
+        // Transform point based on zoom and pan
+        int x = (int) ((p.x / zoomLevel - panOffset.x));
+        int y = (int) ((p.y / zoomLevel - panOffset.y));
+
+        final int SPACE_WIDTH = 40;
+        final int SPACE_DEPTH = 60;
+        final int CORRIDOR_WIDTH = 80;
+        final int GAP = 80;
+
+        int corridorLength = f.getPerimeterLength();
+        int corridorWidth = f.getPerimeterWidth();
+        int outerSpaceDepth = SPACE_DEPTH;
+        int innerSpaceDepth = SPACE_DEPTH;
+
+        ArrayList<ParkingSpace> spaces = f.getSpaces();
+        int index = 0;
+
+        // Check TOP CORRIDOR - Outer row
+        for (int i = 0; i < corridorLength; i++) {
+            int spaceX = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            int spaceY = 0;
+            if (isPointInRect(x, y, spaceX, spaceY, SPACE_WIDTH, outerSpaceDepth)) {
+                return spaces.get(index);
+            }
+            index++;
         }
+
+        // Check TOP CORRIDOR - Inner row
+        for (int i = 0; i < corridorLength; i++) {
+            int spaceX = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            int spaceY = outerSpaceDepth + CORRIDOR_WIDTH;
+            if (isPointInRect(x, y, spaceX, spaceY, SPACE_WIDTH, innerSpaceDepth)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
+        // Check RIGHT CORRIDOR - Outer column
+        int rampGapX = outerSpaceDepth + corridorLength * SPACE_WIDTH + CORRIDOR_WIDTH + innerSpaceDepth;
+        int rightOuterX = rampGapX + GAP;
+        for (int i = 0; i < corridorWidth; i++) {
+            int spaceX = rightOuterX;
+            int spaceY = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            if (isPointInRect(x, y, spaceX, spaceY, outerSpaceDepth, SPACE_WIDTH)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
+        // Check RIGHT CORRIDOR - Inner column
+        int rightCorridorX = rightOuterX - CORRIDOR_WIDTH - innerSpaceDepth;
+        for (int i = 0; i < corridorWidth; i++) {
+            int spaceX = rightCorridorX - innerSpaceDepth;
+            int spaceY = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            if (isPointInRect(x, y, spaceX, spaceY, innerSpaceDepth, SPACE_WIDTH)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
+        // Check BOTTOM CORRIDOR - Outer row
+        int bottomOuterY = outerSpaceDepth + CORRIDOR_WIDTH + corridorWidth * SPACE_WIDTH + CORRIDOR_WIDTH + innerSpaceDepth;
+        for (int i = corridorLength - 1; i >= 0; i--) {
+            int spaceX = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            int spaceY = bottomOuterY;
+            if (isPointInRect(x, y, spaceX, spaceY, SPACE_WIDTH, outerSpaceDepth)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
+        // Check BOTTOM CORRIDOR - Inner row
+        int bottomCorridorY = bottomOuterY - CORRIDOR_WIDTH - innerSpaceDepth;
+        for (int i = corridorLength - 1; i >= 0; i--) {
+            int spaceX = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            int spaceY = bottomCorridorY - innerSpaceDepth;
+            if (isPointInRect(x, y, spaceX, spaceY, SPACE_WIDTH, innerSpaceDepth)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
+        // Check LEFT CORRIDOR - Outer column
+        for (int i = corridorWidth - 1; i >= 0; i--) {
+            int spaceX = 0;
+            int spaceY = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            if (isPointInRect(x, y, spaceX, spaceY, outerSpaceDepth, SPACE_WIDTH)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
+        // Check LEFT CORRIDOR - Inner column
+        for (int i = corridorWidth - 1; i >= 0; i--) {
+            int spaceX = outerSpaceDepth + CORRIDOR_WIDTH;
+            int spaceY = outerSpaceDepth + CORRIDOR_WIDTH + i * SPACE_WIDTH;
+            if (isPointInRect(x, y, spaceX, spaceY, innerSpaceDepth, SPACE_WIDTH)) {
+                return spaces.get(index);
+            }
+            index++;
+        }
+
         return null;
+    }
+
+    private boolean isPointInRect(int px, int py, int rectX, int rectY, int rectWidth, int rectHeight) {
+        return px >= rectX && px <= rectX + rectWidth &&
+                py >= rectY && py <= rectY + rectHeight;
     }
 
     @Override
