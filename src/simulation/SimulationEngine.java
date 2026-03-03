@@ -29,10 +29,10 @@ import java.util.stream.Collectors;
  */
 public class SimulationEngine {
 
-    private static final int    CYCLE_SECONDS          = 8;
-    private static final long   STEP_MS                = 800;
-    private static final double SUGGESTION_FOLLOW_RATE = 0.80;
-    private static final long   MIN_PARK_SECONDS       = 15;
+    private static final int    CYCLE_SECONDS          = 15;
+    private static final long   STEP_MS                = 1200;
+    private static final double SUGGESTION_FOLLOW_RATE = 0.50;
+    private static final long   MIN_PARK_SECONDS       = 10;
     private static final double RATE_PER_HOUR          = 2.50;
 
     private final MainController     mainController;
@@ -133,11 +133,13 @@ public class SimulationEngine {
                 .filter(s -> {
                     ParkingSpace spaceA = null;
                     for (Floor floor : mainController.getParkingStructure().getFloors()) {
-                        for (ParkingSpace space: floor.getSpaces()) {
-                            if (spaceA.getSpaceId().equals(space)){
+                        for (ParkingSpace space : floor.getSpaces()) {
+                            if (space.getSpaceId().equals(s.getSpaceId())) {
                                 spaceA = space;
+                                break;
                             }
                         }
+                        if (spaceA != null) break;
                     }
                     return spaceA != null && spaceA.getState() == SpaceState.OCCUPIED;
                 })

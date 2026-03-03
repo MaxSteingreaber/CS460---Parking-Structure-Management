@@ -39,7 +39,7 @@ public class ControlConsolePanel extends JPanel implements SystemObserver {
     public ControlConsolePanel(MainController mainController) {
         this.mainController = mainController;
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-        setPreferredSize(new Dimension(300, 0));
+        setPreferredSize(new Dimension(500, 0));
         setBorder(BorderFactory.createTitledBorder("Control Console"));
 
         add(buildEmergencyPanel());

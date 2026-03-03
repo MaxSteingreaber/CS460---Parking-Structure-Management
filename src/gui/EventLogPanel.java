@@ -15,7 +15,7 @@ public class EventLogPanel extends JPanel implements SystemObserver {
     public EventLogPanel() {
         setLayout(new BorderLayout());
         setBorder(BorderFactory.createTitledBorder("Event Log"));
-        setPreferredSize(new Dimension(0, 150));
+        setPreferredSize(new Dimension(0, 250));
 
         logArea = new JTextArea();
         logArea.setEditable(false);

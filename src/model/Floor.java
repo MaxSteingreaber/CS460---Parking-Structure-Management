@@ -121,7 +121,20 @@ public class Floor {
         return count;
     }
 
-    public int getCapacity()       { return spaces.size(); }
+    /** Returns the number of spaces actually usable (excludes RESTRICTED and RESERVED). */
+    public int getCapacity() {
+        int count = 0;
+        for (ParkingSpace space : spaces) {
+            if (space.getState() != SpaceState.RESTRICTED
+                    && space.getState() != SpaceState.RESERVED) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** Returns the raw total number of physical spaces on this floor. */
+    public int getTotalSpaces()    { return spaces.size(); }
     public int getFloorNumber()    { return floorNumber; }
     public int getPerimeterLength()           { return perimeterLength; }
     public int getPerimeterWidth()        { return perimeterWidth; }
