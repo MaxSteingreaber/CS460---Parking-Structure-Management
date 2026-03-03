@@ -12,12 +12,14 @@ public class Floor {
     private ArrayList<ParkingSpace> spaces;
     private int perimeterLength;
     private int perimeterWidth;
+    private int rowVar;
 
 
     public Floor(int floorNumber, int spacesLen, int spacesWid) {
         this.floorNumber = floorNumber;
         this.perimeterLength = spacesLen;
         this.perimeterWidth = spacesWid;
+        this.rowVar = 4;
         this.spaces = new ArrayList<>();
         initializeSpaces();
     }
@@ -26,7 +28,7 @@ public class Floor {
         int spaceId = 0;
 
         // Top corridor - OUTER row (left to right)
-        for (int i = 0; i < perimeterLength; i++) {
+        for (int i = 0; i < perimeterLength + rowVar; i++) {
             spaces.add(new ParkingSpace(
                     floorNumber + "-" + spaceId++,
                     SpaceOrientation.HORIZONTAL_TOP_OUTER,
@@ -44,7 +46,7 @@ public class Floor {
         }
 
         // Right corridor - OUTER column (top to bottom)
-        for (int i = 0; i < perimeterWidth; i++) {
+        for (int i = 0; i < perimeterWidth+ 6; i++) {
             spaces.add(new ParkingSpace(
                     floorNumber + "-" + spaceId++,
                     SpaceOrientation.VERTICAL_RIGHT_OUTER,
@@ -62,7 +64,7 @@ public class Floor {
         }
 
         // Bottom corridor - OUTER row (right to left)
-        for (int i = perimeterLength - 1; i >= 0; i--) {
+        for (int i = perimeterLength - 1 + 6; i >= 0; i--) {
             spaces.add(new ParkingSpace(
                     floorNumber + "-" + spaceId++,
                     SpaceOrientation.HORIZONTAL_BOTTOM_OUTER,
@@ -80,7 +82,7 @@ public class Floor {
         }
 
         // Left corridor - OUTER column (bottom to top)
-        for (int i = perimeterWidth - 1; i >= 0; i--) {
+        for (int i = perimeterWidth - 1 + 3; i >= 0; i--) {
             spaces.add(new ParkingSpace(
                     floorNumber + "-" + spaceId++,
                     SpaceOrientation.VERTICAL_LEFT_OUTER,

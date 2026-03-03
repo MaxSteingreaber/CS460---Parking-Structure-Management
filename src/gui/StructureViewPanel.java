@@ -151,7 +151,7 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         // ============ DRAW PARKING SPACES ============
 
         // TOP CORRIDOR - Outer row
-        for (int i = 0; i < corridorLength; i++) {
+        for (int i = 0; i < corridorLength + 3; i++) {
             ParkingSpace space = spaces.get(index++);
             int x = topBottomSpacesStartX + i * SPACE_WIDTH;
             int y = topStartY;
@@ -167,10 +167,10 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         }
 
         // RIGHT CORRIDOR - Outer column
-        for (int i = 0; i < corridorWidth; i++) {
+        for (int i = 0; i < corridorWidth + 6; i++) {
             ParkingSpace space = spaces.get(index++);
             int x = rightOuterX;
-            int y = sideCorridorStartY + i * SPACE_WIDTH;
+            int y = (sideCorridorStartY - 3 * SPACE_WIDTH)  + i * SPACE_WIDTH;
             drawParkingSpace(g2, space, x, y, outerSpaceDepth, SPACE_WIDTH, false);
         }
 
@@ -183,9 +183,9 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         }
 
         // BOTTOM CORRIDOR - Outer row
-        for (int i = corridorLength - 1; i >= 0; i--) {
+        for (int i = corridorLength - 1 + 6; i >= 0; i--) {
             ParkingSpace space = spaces.get(index++);
-            int x = topBottomSpacesStartX + i * SPACE_WIDTH;
+            int x = (topBottomSpacesStartX- 3 * SPACE_WIDTH) + i * SPACE_WIDTH;
             int y = bottomOuterY;
             drawParkingSpace(g2, space, x, y, SPACE_WIDTH, outerSpaceDepth, true);
         }
@@ -199,10 +199,10 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         }
 
         // LEFT CORRIDOR (RAMP) - Outer column
-        for (int i = corridorWidth - 1; i >= 0; i--) {
+        for (int i = corridorWidth - 1 + 3; i >= 0; i--) {
             ParkingSpace space = spaces.get(index++);
             int x = 0;
-            int y = sideCorridorStartY + i * SPACE_WIDTH;
+            int y = (sideCorridorStartY) + i * SPACE_WIDTH;
             drawParkingSpace(g2, space, x, y, outerSpaceDepth, SPACE_WIDTH, false);
         }
 
