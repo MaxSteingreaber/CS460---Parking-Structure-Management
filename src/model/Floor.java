@@ -19,7 +19,6 @@ public class Floor {
         this.floorNumber = floorNumber;
         this.perimeterLength = spacesLen;
         this.perimeterWidth = spacesWid;
-        this.rowVar = 4;
         this.spaces = new ArrayList<>();
         initializeSpaces();
     }
@@ -28,7 +27,7 @@ public class Floor {
         int spaceId = 0;
 
         // Top corridor - OUTER row (left to right)
-        for (int i = 0; i < perimeterLength + rowVar; i++) {
+        for (int i = 0; i < perimeterLength + 3; i++) {
             spaces.add(new ParkingSpace(
                     floorNumber + "-" + spaceId++,
                     SpaceOrientation.HORIZONTAL_TOP_OUTER,
