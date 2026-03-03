@@ -57,10 +57,10 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
 
     private JPanel buildLegend() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
-        panel.add(legendSwatch("Available",  new Color(100, 200, 100)));
-        panel.add(legendSwatch("Occupied",   new Color( 70, 130, 200)));
+        panel.add(legendSwatch("Available",  new Color(100, 200, 100)));   // green
+        panel.add(legendSwatch("Occupied",   new Color(220,  50,  50)));   // red
+        panel.add(legendSwatch("Reserved",   new Color( 70, 130, 200)));   // blue
         panel.add(legendSwatch("Restricted", Color.LIGHT_GRAY));
-        panel.add(legendSwatch("Reserved",   new Color(220,  80,  80)));
         return panel;
     }
 
@@ -117,10 +117,12 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
 
     private Color getSpaceColor(SpaceState state) {
         switch (state) {
-            case AVAILABLE:  return new Color(100, 200, 100);
-            case OCCUPIED:   return new Color( 70, 130, 200);
+            case AVAILABLE:  return new Color(100, 200, 100);   // green
+            case IN_TRANSIT: return new Color(100, 200, 100);   // green — same as available,
+            //  spot not yet physically taken
+            case OCCUPIED:   return new Color(220,  50,  50);   // red
+            case RESERVED:   return new Color( 70, 130, 200);   // blue
             case RESTRICTED: return Color.LIGHT_GRAY;
-            case RESERVED:   return new Color(220,  80,  80);
             default:         return Color.WHITE;
         }
     }
@@ -177,9 +179,9 @@ public class StructureViewPanel extends JPanel implements SystemObserver {
         public String getToolTipText(MouseEvent e) {
             ParkingSpace space = getSpaceAtPoint(e.getPoint());
             if (space == null) return null;
-            String base = space.getSpaceId() + " — " + space.getState();
-            if (space.getSessionId() != null) base += " | Session: " + space.getSessionId();
-            return base;
+            String tip = space.getSpaceId() + " — " + space.getState();
+            if (space.getSessionId() != null) tip += " | Session: " + space.getSessionId();
+            return tip;
         }
 
         @Override

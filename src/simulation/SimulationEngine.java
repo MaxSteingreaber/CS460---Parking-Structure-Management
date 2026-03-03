@@ -2,6 +2,8 @@ package simulation;
 
 import controller.MainController;
 import enums.AllocationStrategy;
+import enums.SpaceState;
+import model.Floor;
 import model.ParkingSpace;
 import model.Session;
 import observer.EventType;
@@ -13,122 +15,142 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
- * SimulationEngine drives a realistic, self-running demo of the MPSMS.
+ * SimulationEngine — self-running demo driver for the MPSMS.
  *
- * ── Entry sequence ────────────────────────────────────────────────────────────
- *   1. Induction Loop detected at entrance
- *   2. Entry Kiosk button pressed
- *   3. Gate actuated (OPEN)
- *   4. In-Transit count incremented and displayed          ← Phase 1 complete
- *   5. Weight Sensor detected → space OCCUPIED (IN_TRANSIT → OCCUPIED on GUI)
- *                                                          ← Phase 2 complete
+ * Entry and exit run on fully independent schedulers so they can be started
+ * and stopped individually or together.
  *
- * ── Exit sequence (normal) ───────────────────────────────────────────────────
- *   1. Weight Sensor detects car leaving → space AVAILABLE, LED → GREEN
- *   2. In-Transit count incremented
- *   3. Induction Loop detected at exit gate
- *   4. Ticket scanned / fee calculated
- *   5. Payment processed
- *   6. Gate actuated (OPEN)
- *   7. In-Transit count decremented
- *
- * ── Emergency mode ────────────────────────────────────────────────────────────
- *   Entry: gate is permanently open; entry flow is halted
- *   Exit:  steps 4 & 5 (payment) are skipped entirely; gate opens immediately
- *
- * ── Timing knobs ──────────────────────────────────────────────────────────────
- *   CYCLE_SECONDS — seconds between vehicle events   (default: 8)
- *   STEP_MS       — ms between individual log steps  (default: 700)
+ * Exit safety guarantee: a session is only eligible to exit once its
+ * assigned parking space reaches SpaceState.OCCUPIED. Vehicles still
+ * travelling from the gate (IN_TRANSIT) are never selected for exit.
  */
 public class SimulationEngine {
 
-    private static final int    CYCLE_SECONDS = 8;
-    private static final long   STEP_MS       = 700;
-    private static final double RATE_PER_HOUR = 2.50;
-    private static final double FILL_BIAS     = 0.60;
+    private static final int    CYCLE_SECONDS          = 8;
+    private static final long   STEP_MS                = 800;
+    private static final double SUGGESTION_FOLLOW_RATE = 0.80;
+    private static final long   MIN_PARK_SECONDS       = 15;
+    private static final double RATE_PER_HOUR          = 2.50;
 
-    private final MainController        mainController;
-    private final Random                random;
-    private ScheduledExecutorService    scheduler;
-    private ScheduledFuture<?>          cycleHandle;
-    private volatile boolean            running;
+    private final MainController     mainController;
+    private final Random             random;
+
+    // ── Independent entry scheduler ───────────────────────────────────────────
+    private ScheduledExecutorService entryScheduler;
+    private ScheduledFuture<?>       entryHandle;
+    private volatile boolean         entryRunning = false;
+
+    // ── Independent exit scheduler ────────────────────────────────────────────
+    private ScheduledExecutorService exitScheduler;
+    private ScheduledFuture<?>       exitHandle;
+    private volatile boolean         exitRunning  = false;
 
     public SimulationEngine(MainController mainController) {
         this.mainController = mainController;
         this.random         = new Random();
-        this.running        = false;
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // ── Entry lifecycle ───────────────────────────────────────────────────────
 
-    public void start() {
-        if (running) return;
-        running     = true;
-        scheduler   = Executors.newScheduledThreadPool(4);
-        cycleHandle = scheduler.scheduleAtFixedRate(
-                this::decisionCycle, 1, CYCLE_SECONDS, TimeUnit.SECONDS);
+    public void startEntry() {
+        if (entryRunning) return;
+        entryRunning   = true;
+        entryScheduler = Executors.newScheduledThreadPool(2);
+        entryHandle    = entryScheduler.scheduleAtFixedRate(
+                this::entryCycle, 1, CYCLE_SECONDS, TimeUnit.SECONDS);
     }
 
-    public void stop() {
-        running = false;
-        if (cycleHandle != null) cycleHandle.cancel(false);
-        if (scheduler   != null) scheduler.shutdownNow();
+    public void stopEntry() {
+        entryRunning = false;
+        if (entryHandle    != null) entryHandle.cancel(false);
+        if (entryScheduler != null) entryScheduler.shutdownNow();
     }
 
-    public boolean isRunning() { return running; }
+    public boolean isEntryRunning() { return entryRunning; }
 
-    // ── Decision cycle ────────────────────────────────────────────────────────
+    // ── Exit lifecycle ────────────────────────────────────────────────────────
 
-    private void decisionCycle() {
-        if (!running) return;
+    public void startExit() {
+        if (exitRunning) return;
+        exitRunning   = true;
+        exitScheduler = Executors.newScheduledThreadPool(2);
+        exitHandle    = exitScheduler.scheduleAtFixedRate(
+                this::exitCycle, 1, CYCLE_SECONDS, TimeUnit.SECONDS);
+    }
 
-        boolean emergency = mainController.isEmergencyActive();
-        int active = mainController.getDataStoreDriver()
-                .getSessionLogger().getActiveSessions().size();
+    public void stopExit() {
+        exitRunning = false;
+        if (exitHandle    != null) exitHandle.cancel(false);
+        if (exitScheduler != null) exitScheduler.shutdownNow();
+    }
 
-        // During emergency only drain vehicles out
-        if (emergency) {
-            if (active > 0) scheduler.submit(this::simulateEmergencyExitFlow);
-            return;
-        }
+    public boolean isExitRunning() { return exitRunning; }
 
-        int total    = mainController.getParkingStructure().getTotalCapacity();
+    // ── Convenience: start / stop both together ───────────────────────────────
+
+    public void startBoth() { startEntry(); startExit(); }
+    public void stopBoth()  { stopEntry();  stopExit(); }
+    public boolean isRunning() { return entryRunning || exitRunning; }
+
+    // ── Decision cycles ───────────────────────────────────────────────────────
+
+    private void entryCycle() {
+        if (!entryRunning) return;
+        int total   = mainController.getParkingStructure().getTotalCapacity();
         int occupied = mainController.getParkingStructure().getTotalOccupancy();
-        boolean canEnter = occupied < total;
-        boolean canExit  = active > 0;
+        if (occupied >= total) return;   // structure full — skip
 
-        if (!canEnter && !canExit) return;
-        if (!canEnter) { scheduler.submit(this::simulateExitFlow);  return; }
-        if (!canExit)  { scheduler.submit(this::simulateEntryFlow); return; }
+        if (mainController.isEmergencyActive())
+            entryScheduler.submit(this::simulateEmergencyEntryFlow);
+        else
+            entryScheduler.submit(this::simulateEntryFlow);
+    }
 
-        double fillRatio        = (double) occupied / total;
-        double entryProbability = fillRatio < FILL_BIAS ? 0.75 : 0.45;
+    private void exitCycle() {
+        if (!exitRunning) return;
+        if (getExitEligibleSessions().isEmpty()) return;   // nothing ready — skip
 
-        if (random.nextDouble() < entryProbability) {
-            scheduler.submit(this::simulateEntryFlow);
-        } else {
-            scheduler.submit(this::simulateExitFlow);
-        }
+        if (mainController.isEmergencyActive())
+            exitScheduler.submit(this::simulateEmergencyExitFlow);
+        else
+            exitScheduler.submit(this::simulateExitFlow);
+    }
+
+    // ── Exit eligibility helper ───────────────────────────────────────────────
+
+    /**
+     * Returns active sessions whose space is fully OCCUPIED and, in normal
+     * mode, that have been parked at least MIN_PARK_SECONDS.
+     * Vehicles still IN_TRANSIT (en route from the gate) are excluded.
+     */
+    private List<Session> getExitEligibleSessions() {
+        boolean emergency = mainController.isEmergencyActive();
+        return mainController.getDataStoreDriver()
+                .getSessionLogger().getActiveSessions().stream()
+                .filter(s -> {
+                    ParkingSpace space = findSpace(s.getSpaceId());
+                    return space != null && space.getState() == SpaceState.OCCUPIED;
+                })
+                .filter(s -> emergency || s.getDuration().getSeconds() >= MIN_PARK_SECONDS)
+                .collect(Collectors.toList());
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // ENTRY FLOW
+    // ENTRY FLOW (normal)
     // ═════════════════════════════════════════════════════════════════════════
 
     private void simulateEntryFlow() {
 
-        // 1. Induction Loop detected
         log(EventType.GATE, "LOOP-ENTRY",
                 "━━ ENTRY ━━  Induction Loop [LOOP-ENTRY]: Vehicle detected at entrance — signal HIGH");
 
-        // 2. Entry Kiosk button pressed
         sleep(1);
         log(EventType.SESSION, "ENTRY-KIOSK",
                 "Entry Kiosk: Ticket request button pressed by driver");
 
-        // Show system suggestion before committing to a space
         ParkingSpace suggested = mainController.getSuggestedSpace();
         if (suggested != null) {
             log(EventType.SESSION, suggested.getSpaceId(),
@@ -137,33 +159,32 @@ public class SimulationEngine {
                             + " — driver may choose any available space");
         }
 
-        // 3. Gate actuated + 4. In-Transit count updated  [Phase 1]
+        boolean followsSuggestion = random.nextDouble() < SUGGESTION_FOLLOW_RATE;
+        AllocationStrategy strategy = followsSuggestion
+                ? AllocationStrategy.LOWEST_FLOOR_FIRST
+                : AllocationStrategy.RANDOM;
+
         sleep(2);
-        String sessionId = mainController.startVehicleEntry(AllocationStrategy.RANDOM);
+        String sessionId = mainController.startVehicleEntry(strategy);
         if (sessionId == null) return;
 
         String assignedSpace = getSessionSpaceId(sessionId);
         if (assignedSpace != null) {
-            boolean tookSuggestion = suggested != null
-                    && assignedSpace.equals(suggested.getSpaceId());
-            log(EventType.SESSION, assignedSpace,
-                    "Driver selected: " + assignedSpace
-                            + (tookSuggestion
-                            ? " (accepted system suggestion)"
-                            : " (chose independently — differs from suggestion)"));
+            log(EventType.SESSION, assignedSpace, followsSuggestion
+                    ? "Driver accepted suggestion → parked at " + assignedSpace
+                    : "Driver chose independently → parked at " + assignedSpace
+                    + (suggested != null ? " (suggested was " + suggested.getSpaceId() + ")" : ""));
         }
 
         log(EventType.GATE, "GATE-ENTRY",
                 "Gate Actuator [ENTRY]: RAISED — barrier arm up, vehicle proceeding");
         log(EventType.CAPACITY, null,
                 "In-Transit Count updated: " + mainController.getInTransitCount()
-                        + " vehicle(s) en route to stall — capacity display adjusted");
+                        + " vehicle(s) en route to stall");
 
-        // 5. Weight Sensor detected → space transitions IN_TRANSIT → OCCUPIED  [Phase 2]
         sleep(3);
         log(EventType.SESSION, assignedSpace,
-                "Weight Sensor [" + assignedSpace
-                        + "]: Weight increase detected — vehicle arriving at stall");
+                "Weight Sensor [" + assignedSpace + "]: Weight increase detected — vehicle arriving at stall");
 
         sleep(4);
         mainController.completeVehicleEntry(sessionId);
@@ -188,18 +209,15 @@ public class SimulationEngine {
     // ═════════════════════════════════════════════════════════════════════════
 
     private void simulateExitFlow() {
-        List<Session> active = mainController.getDataStoreDriver()
-                .getSessionLogger().getActiveSessions();
-        if (active.isEmpty()) return;
+        List<Session> eligible = getExitEligibleSessions();
+        if (eligible.isEmpty()) return;
 
-        Session session  = active.get(random.nextInt(active.size()));
+        Session session  = eligible.get(random.nextInt(eligible.size()));
         String sessionId = session.getSessionId();
         String spaceId   = session.getSpaceId();
+        long   minutes   = session.getDuration().toMinutes();
+        double fee       = Math.ceil(minutes / 60.0) * RATE_PER_HOUR;
 
-        long   minutes = Math.max(session.getDuration().toMinutes(), 1);
-        double fee     = Math.ceil(minutes / 60.0) * RATE_PER_HOUR;
-
-        // 1. Weight Sensor detects car leaving stall → space AVAILABLE
         log(EventType.EXIT, sessionId,
                 "━━ EXIT ━━  Weight Sensor [" + spaceId
                         + "]: Weight decrease detected — vehicle departing stall");
@@ -209,18 +227,14 @@ public class SimulationEngine {
 
         log(EventType.SESSION, spaceId,
                 "Spot LED Indicator [" + spaceId + "]: Color → GREEN (available)");
-
-        // 2. In-Transit count updated
         log(EventType.CAPACITY, null,
                 "In-Transit Count updated: " + mainController.getInTransitCount()
                         + " vehicle(s) en route to exit");
 
-        // 3. Induction Loop detected at exit gate
         sleep(2);
         log(EventType.GATE, "LOOP-EXIT",
                 "Induction Loop [LOOP-EXIT]: Vehicle detected at exit gate — signal HIGH");
 
-        // 4. Ticket scanned / fee calculated
         sleep(3);
         log(EventType.SESSION, sessionId,
                 "Exit Kiosk: Ticket scanned — Session ID: " + sessionId
@@ -228,27 +242,23 @@ public class SimulationEngine {
 
         sleep(4);
         log(EventType.SESSION, sessionId,
-                "Exit Kiosk: Duration = " + minutes + " min"
-                        + "  |  Fee = $" + String.format("%.2f", fee));
+                "Exit Kiosk: Duration = " + minutes + " min  |  Fee = $"
+                        + String.format("%.2f", fee));
 
         sleep(5);
         log(EventType.SESSION, sessionId,
                 "Payment Gateway: Authorisation request sent — processing card...");
 
-        // 5. Payment processed
         sleep(6);
         log(EventType.SESSION, sessionId,
                 "Payment Gateway: APPROVED — transaction authorised ($"
                         + String.format("%.2f", fee) + ")");
 
-        // 6. Gate actuated
         sleep(7);
         mainController.completeVehicleExit(sessionId);
 
         log(EventType.GATE, "GATE-EXIT",
                 "Gate Actuator [EXIT]: RAISED — barrier arm up, vehicle proceeding");
-
-        // 7. In-Transit count decremented
         log(EventType.CAPACITY, null,
                 "In-Transit Count updated: " + mainController.getInTransitCount()
                         + " vehicle(s) remaining in transit");
@@ -263,60 +273,88 @@ public class SimulationEngine {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // EMERGENCY EXIT FLOW — no payment, gate already open
+    // EMERGENCY ENTRY FLOW — gates permanently open, no actuation
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private void simulateEmergencyEntryFlow() {
+        log(EventType.ENTRY, "LOOP-ENTRY",
+                "━━ EMERGENCY ENTRY ━━  Vehicle arriving — all gates OPEN (no actuation required)");
+
+        AllocationStrategy strategy = random.nextDouble() < SUGGESTION_FOLLOW_RATE
+                ? AllocationStrategy.LOWEST_FLOOR_FIRST
+                : AllocationStrategy.RANDOM;
+
+        sleep(1);
+        String sessionId = mainController.startVehicleEntryEmergency(strategy);
+        if (sessionId == null) return;
+
+        String spaceId = getSessionSpaceId(sessionId);
+        log(EventType.SESSION, spaceId,
+                "EMERGENCY: Vehicle entering freely — Space " + spaceId
+                        + " assigned | No ticket issued, no gate command sent");
+
+        sleep(2);
+        mainController.completeVehicleEntry(sessionId);
+
+        log(EventType.SESSION, spaceId,
+                "Weight Sensor [" + spaceId + "]: OCCUPIED — vehicle parked (emergency mode)");
+        log(EventType.CAPACITY, null,
+                "In-Transit Count updated: " + mainController.getInTransitCount()
+                        + " vehicle(s) remaining in transit");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // EMERGENCY EXIT FLOW — gates permanently open, no actuation
     // ═════════════════════════════════════════════════════════════════════════
 
     private void simulateEmergencyExitFlow() {
-        List<Session> active = mainController.getDataStoreDriver()
-                .getSessionLogger().getActiveSessions();
-        if (active.isEmpty()) return;
+        List<Session> eligible = getExitEligibleSessions();
+        if (eligible.isEmpty()) return;
 
-        Session session  = active.get(random.nextInt(active.size()));
+        Session session  = eligible.get(random.nextInt(eligible.size()));
         String sessionId = session.getSessionId();
         String spaceId   = session.getSpaceId();
 
-        // 1. Weight Sensor detects car leaving
         log(EventType.EXIT, sessionId,
                 "━━ EMERGENCY EXIT ━━  Weight Sensor [" + spaceId
-                        + "]: Vehicle departing stall");
+                        + "]: Vehicle departing stall — gates remain OPEN, no actuation");
 
         sleep(1);
         mainController.startVehicleExit(sessionId);
 
         log(EventType.SESSION, spaceId,
-                "Spot LED Indicator [" + spaceId + "]: Color → GREEN (available)");
-
-        // 2. In-Transit count updated
+                "Spot LED [" + spaceId + "]: GREEN (available) | No gate command issued");
         log(EventType.CAPACITY, null,
                 "In-Transit Count updated: " + mainController.getInTransitCount()
                         + " vehicle(s) evacuating");
 
-        // 3. Induction Loop detected
         sleep(2);
-        log(EventType.GATE, "LOOP-EXIT",
-                "Induction Loop [LOOP-EXIT]: Vehicle detected at exit gate");
-
-        // 4 & 5 SKIPPED — no payment during emergency
-        sleep(3);
         log(EventType.SESSION, sessionId,
-                "EMERGENCY MODE: Payment steps BYPASSED — no ticket or card required");
+                "EMERGENCY MODE: Payment BYPASSED — vehicle exiting freely, no ticket or card required");
 
-        // 6. Gate open (already raised by emergency override)
-        log(EventType.GATE, "GATE-EXIT",
-                "Gate Actuator [EXIT]: OPEN (emergency override active — barrier permanently raised)");
-
-        // 7. In-Transit count decremented
-        sleep(4);
+        sleep(3);
         mainController.completeVehicleExit(sessionId);
 
+        log(EventType.SESSION, sessionId,
+                "Session " + sessionId + " closed — fee WAIVED (emergency) | Vehicle clear");
         log(EventType.CAPACITY, null,
                 "In-Transit Count updated: " + mainController.getInTransitCount()
                         + " vehicle(s) remaining");
-        log(EventType.SESSION, sessionId,
-                "Data Store: Session " + sessionId + " closed — fee WAIVED (emergency)");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private ParkingSpace findSpace(String spaceId) {
+        for (Floor f : mainController.getParkingStructure().getFloors()) {
+            for (int r = 0; r < f.getRows(); r++) {
+                for (int c = 0; c < f.getColumns(); c++) {
+                    ParkingSpace sp = f.getSpace(r, c);
+                    if (sp.getSpaceId().equals(spaceId)) return sp;
+                }
+            }
+        }
+        return null;
+    }
 
     private void log(EventType type, String targetId, String message) {
         mainController.notifyObservers(new SystemEvent(type, targetId, message));

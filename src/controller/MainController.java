@@ -22,18 +22,18 @@ import java.util.UUID;
 /**
  * Central orchestrator of the MPSMS.
  *
- * Entry and exit are split into two phases to model real hardware sequencing.
- * The in-transit counter tracks vehicles between the gate and their stall
- * (entry) or between their stall and the exit gate (exit). The counter is
- * displayed on the DriverDisplayPanel but does NOT affect space colour on the
- * grid — spaces go directly AVAILABLE → OCCUPIED on entry and OCCUPIED →
- * AVAILABLE on exit, with the weight sensor completing each transition.
+ * During EMERGENCY the gates are permanently open and vehicles flow freely
+ * in both directions with no kiosk interaction and no payment. Entry and
+ * exit are still tracked so occupancy and in-transit counts remain accurate.
  *
- *   ENTRY  Phase 1 — startVehicleEntry()    : allocate + occupy space, open gate, +inTransit
- *   ENTRY  Phase 2 — completeVehicleEntry() : weight sensor confirmed, -inTransit
+ * Normal two-phase sequencing:
+ *   ENTRY Phase 1 — startVehicleEntry()          : IN_TRANSIT, gate opens, inTransit++
+ *   ENTRY Phase 2 — completeVehicleEntry()        : weight sensor → OCCUPIED (RED), inTransit--
+ *   EMERGENCY ENTRY— startVehicleEntryEmergency() : OCCUPIED immediately, inTransit++
+ *                  — completeVehicleEntry()        : weight sensor confirmed, inTransit--
  *
- *   EXIT   Phase 1 — startVehicleExit()     : weight sensor cleared → AVAILABLE, +inTransit
- *   EXIT   Phase 2 — completeVehicleExit()  : payment done, open gate, archive, -inTransit
+ *   EXIT  Phase 1 — startVehicleExit()            : AVAILABLE (GREEN), inTransit++
+ *   EXIT  Phase 2 — completeVehicleExit()          : gate opens / fee archived, inTransit--
  */
 public class MainController {
 
@@ -80,16 +80,8 @@ public class MainController {
         if (sessionId != null) completeVehicleEntry(sessionId);
     }
 
-    // ── Entry Phase 1: space allocated + OCCUPIED, gate opens, inTransit++ ────
+    // ── Entry Phase 1 (normal): space → IN_TRANSIT (GREEN), gate opens ────────
 
-    /**
-     * Allocates the best available space, immediately marks it OCCUPIED
-     * (the grid updates to blue), opens the entry gate, and increments the
-     * in-transit counter. The weight sensor confirmation (Phase 2) will
-     * decrement the counter once the vehicle is physically in the stall.
-     *
-     * @return the new sessionId, or null if structure is full / emergency active
-     */
     public String startVehicleEntry(AllocationStrategy strategyOverride) {
         if (isEmergencyActive) return null;
         if (userInputCtrl != null && !userInputCtrl.getEntryKiosk().isActive()) return null;
@@ -105,9 +97,7 @@ public class MainController {
         String sessionId  = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         LocalDateTime now = LocalDateTime.now();
 
-        // Space goes straight to OCCUPIED — grid updates to blue immediately
-        space.occupy(sessionId);
-
+        space.inTransit(sessionId);
         dataStoreDriver.getSessionLogger()
                 .createSession(sessionId, space.getSpaceId(), space.getFloor(), now);
         dataStoreDriver.getCapacityMonitor().incrementOccupancy(space.getFloor());
@@ -127,20 +117,48 @@ public class MainController {
         return sessionId;
     }
 
-    // ── Entry Phase 2: weight sensor confirmed, inTransit-- ───────────────────
+    // ── Entry Phase 1 (emergency): gates already open, no kiosk/ticket ───────
 
     /**
-     * Called when the weight sensor at the stall confirms vehicle arrival.
-     * The space is already OCCUPIED — this simply decrements the in-transit
-     * counter and logs the hardware confirmation.
+     * Emergency variant — bypasses the emergency block, kiosk check, and gate
+     * command. Space goes straight to IN_TRANSIT; weight sensor (Phase 2) will
+     * flip it to OCCUPIED as normal.
      */
+    public String startVehicleEntryEmergency(AllocationStrategy strategyOverride) {
+        ParkingSpace space = parkingStructure.findAvailableSpace(strategyOverride);
+        if (space == null) return null;
+
+        String sessionId  = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        LocalDateTime now = LocalDateTime.now();
+
+        space.inTransit(sessionId);
+        dataStoreDriver.getSessionLogger()
+                .createSession(sessionId, space.getSpaceId(), space.getFloor(), now);
+        dataStoreDriver.getCapacityMonitor().incrementOccupancy(space.getFloor());
+        inTransitCount++;
+
+        facilitiesOutputCtrl.updateFloorDisplay(space.getFloor(),
+                dataStoreDriver.getCapacityMonitor().getAvailable(space.getFloor()));
+
+        notifyObservers(new SystemEvent(EventType.ENTRY, sessionId,
+                "Emergency entry — Space: " + space.getSpaceId()
+                        + " | In-Transit: " + inTransitCount));
+
+        return sessionId;
+    }
+
+    // ── Entry Phase 2: weight sensor fires → OCCUPIED (RED), inTransit-- ─────
+
     public void completeVehicleEntry(String sessionId) {
-        dataStoreDriver.getSessionLogger().getSessionById(sessionId).ifPresent(session -> {
-            inTransitCount = Math.max(0, inTransitCount - 1);
-            notifyObservers(new SystemEvent(EventType.SESSION, sessionId,
-                    "Weight sensor confirmed — Space " + session.getSpaceId()
-                            + " OCCUPIED | In-Transit: " + inTransitCount));
-        });
+        dataStoreDriver.getSessionLogger().getSessionById(sessionId).ifPresent(session ->
+                findSpaceById(session.getSpaceId()).ifPresent(space -> {
+                    space.occupy(sessionId);
+                    inTransitCount = Math.max(0, inTransitCount - 1);
+                    notifyObservers(new SystemEvent(EventType.SESSION, sessionId,
+                            "Weight sensor confirmed — Space " + session.getSpaceId()
+                                    + " OCCUPIED | In-Transit: " + inTransitCount));
+                })
+        );
     }
 
     // ── Exit convenience wrapper (manual admin buttons) ───────────────────────
@@ -150,7 +168,7 @@ public class MainController {
         completeVehicleExit(sessionId);
     }
 
-    // ── Exit Phase 1: weight sensor clears, space AVAILABLE, inTransit++ ─────
+    // ── Exit Phase 1: weight sensor clears → AVAILABLE (GREEN), inTransit++ ──
 
     public void startVehicleExit(String sessionId) {
         dataStoreDriver.getSessionLogger().getSessionById(sessionId).ifPresent(session ->
@@ -165,7 +183,7 @@ public class MainController {
         );
     }
 
-    // ── Exit Phase 2: payment confirmed, gate opens, transaction archived ─────
+    // ── Exit Phase 2: payment / gate / archive ────────────────────────────────
 
     public void completeVehicleExit(String sessionId) {
         dataStoreDriver.getSessionLogger().getSessionById(sessionId).ifPresent(session -> {
@@ -178,7 +196,8 @@ public class MainController {
             dataStoreDriver.getTransactionArchive().archiveTransaction(session, fee);
             dataStoreDriver.getCapacityMonitor().decrementOccupancy(session.getFloor());
 
-            facilitiesOutputCtrl.openGate("EXIT");
+            if (!isEmergencyActive) facilitiesOutputCtrl.openGate("EXIT");
+
             facilitiesOutputCtrl.updateFloorDisplay(session.getFloor(),
                     dataStoreDriver.getCapacityMonitor().getAvailable(session.getFloor()));
 
@@ -194,7 +213,7 @@ public class MainController {
         });
     }
 
-    // ── Suggested space (no side effects) ────────────────────────────────────
+    // ── Suggested space ───────────────────────────────────────────────────────
 
     public ParkingSpace getSuggestedSpace() {
         return parkingStructure.findAvailableSpace(AllocationStrategy.LOWEST_FLOOR_FIRST);
@@ -202,21 +221,24 @@ public class MainController {
 
     // ── Emergency ─────────────────────────────────────────────────────────────
 
+    /**
+     * Activates emergency state. Gates open permanently. Vehicles continue to
+     * flow freely in both directions — the entry kiosk is intentionally NOT
+     * disabled so the simulation can still process entries during evacuation.
+     */
     public void activateEmergency() {
         if (isEmergencyActive) return;
         isEmergencyActive = true;
         emergencyOutputCtrl.engageEmergency();
         facilitiesOutputCtrl.openAllGates();
-        if (userInputCtrl != null) userInputCtrl.getEntryKiosk().disable();
         notifyObservers(new SystemEvent(EventType.EMERGENCY, null,
-                "Emergency state ACTIVATED — all gates open, payment waived"));
+                "Emergency state ACTIVATED — all gates open, vehicles flow freely, payment waived"));
     }
 
     public void deactivateEmergency() {
         if (!isEmergencyActive) return;
         isEmergencyActive = false;
         emergencyOutputCtrl.disengageEmergency();
-        if (userInputCtrl != null) userInputCtrl.getEntryKiosk().enable();
         notifyObservers(new SystemEvent(EventType.EMERGENCY, null,
                 "Emergency state DEACTIVATED — normal operations resumed"));
     }
@@ -294,11 +316,11 @@ public class MainController {
     public AllocationStrategy getAllocationStrategy() { return allocationStrategy; }
 
     // ── Setters ───────────────────────────────────────────────────────────────
-    public void setUserInputCtrl(UserInputController ctrl)             { this.userInputCtrl = ctrl; }
-    public void setFacilitiesInputCtrl(FacilitiesInputController ctrl) { this.facilitiesInputCtrl = ctrl; }
-    public void setEmergencyOutputCtrl(EmergencyOutputController ctrl) { this.emergencyOutputCtrl = ctrl; }
+    public void setUserInputCtrl(UserInputController ctrl)              { this.userInputCtrl = ctrl; }
+    public void setFacilitiesInputCtrl(FacilitiesInputController ctrl)  { this.facilitiesInputCtrl = ctrl; }
+    public void setEmergencyOutputCtrl(EmergencyOutputController ctrl)  { this.emergencyOutputCtrl = ctrl; }
     public void setFacilitiesOutputCtrl(FacilitiesOutputController ctrl){ this.facilitiesOutputCtrl = ctrl; }
-    public void setDataStoreDriver(DataStoreDriver driver)             { this.dataStoreDriver = driver; }
-    public void setParkingStructure(ParkingStructure structure)        { this.parkingStructure = structure; }
-    public void setAllocationStrategy(AllocationStrategy strategy)     { this.allocationStrategy = strategy; }
+    public void setDataStoreDriver(DataStoreDriver driver)              { this.dataStoreDriver = driver; }
+    public void setParkingStructure(ParkingStructure structure)         { this.parkingStructure = structure; }
+    public void setAllocationStrategy(AllocationStrategy strategy)      { this.allocationStrategy = strategy; }
 }
