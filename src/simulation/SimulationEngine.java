@@ -131,12 +131,21 @@ public class SimulationEngine {
         return mainController.getDataStoreDriver()
                 .getSessionLogger().getActiveSessions().stream()
                 .filter(s -> {
-                    ParkingSpace space = findSpace(s.getSpaceId());
-                    return space != null && space.getState() == SpaceState.OCCUPIED;
+                    ParkingSpace spaceA = null;
+                    for (Floor floor : mainController.getParkingStructure().getFloors()) {
+                        for (ParkingSpace space: floor.getSpaces()) {
+                            if (spaceA.getSpaceId().equals(space)){
+                                spaceA = space;
+                            }
+                        }
+                    }
+                    return spaceA != null && spaceA.getState() == SpaceState.OCCUPIED;
                 })
                 .filter(s -> emergency || s.getDuration().getSeconds() >= MIN_PARK_SECONDS)
                 .collect(Collectors.toList());
     }
+
+
 
     // ═════════════════════════════════════════════════════════════════════════
     // ENTRY FLOW (normal)
@@ -344,17 +353,17 @@ public class SimulationEngine {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private ParkingSpace findSpace(String spaceId) {
-        for (Floor f : mainController.getParkingStructure().getFloors()) {
-            for (int r = 0; r < f.getRows(); r++) {
-                for (int c = 0; c < f.getColumns(); c++) {
-                    ParkingSpace sp = f.getSpace(r, c);
-                    if (sp.getSpaceId().equals(spaceId)) return sp;
-                }
-            }
-        }
-        return null;
-    }
+//    private ParkingSpace findSpace(String spaceId) {
+//        for (Floor f : mainController.getParkingStructure().getFloors()) {
+//            for (int r = 0; r < f.getRows(); r++) {
+//                for (int c = 0; c < f.getColumns(); c++) {
+//                    ParkingSpace sp = f.getSpace(r, c);
+//                    if (sp.getSpaceId().equals(spaceId)) return sp;
+//                }
+//            }
+//        }
+//        return null;
+//    }
 
     private void log(EventType type, String targetId, String message) {
         mainController.notifyObservers(new SystemEvent(type, targetId, message));

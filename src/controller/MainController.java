@@ -280,7 +280,7 @@ public class MainController {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private Optional<ParkingSpace> findSpaceById(String spaceId) {
+    public Optional<ParkingSpace> findSpaceById(String spaceId) {
         for (Floor floor : parkingStructure.getFloors()) {
             for (ParkingSpace space: floor.getSpaces()) {
                 if (space.getSpaceId().equals(spaceId)) return Optional.of(space);
